@@ -22,6 +22,7 @@ from config import (
     RPICAM_COMMAND,
     RPICAM_EXTRA_ARGS,
     RTSP_URL,
+    TEST_CAMERA_MAX_INDEX,
 )
 from services.detector import Detector
 from services.geometry import bbox_intersects_polygon
@@ -67,9 +68,29 @@ class VideoState:
         self.capture_ready = True
         return cap
 
+    def _open_test_camera(self) -> Optional[cv2.VideoCapture]:
+        for index in range(TEST_CAMERA_MAX_INDEX + 1):
+            cap = cv2.VideoCapture(index)
+            if not cap.isOpened():
+                cap.release()
+                continue
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
+            cap.set(cv2.CAP_PROP_FPS, CAMERA_FPS)
+            self.camera_error = None
+            self.capture_ready = True
+            return cap
+
+        self.camera_error = f"{MODE} camera unavailable: no OpenCV camera found"
+        return None
+
     def _capture_loop(self) -> None:
         if MODE == "RPICAM":
             self._rpicam_capture_loop()
+            return
+        if MODE == "TESTMODE":
+            self._test_camera_capture_loop()
             return
         self._ipcam_capture_loop()
 
@@ -102,6 +123,39 @@ class VideoState:
             ok, frame = cap.read()
             if not ok:
                 self.camera_error = "camera read failed"
+                self.capture_ready = False
+                cap.release()
+                cap = None
+                self._publish_error_frame()
+                time.sleep(0.5)
+                continue
+
+            self._publish_capture_frame(frame)
+
+            frames += 1
+            elapsed = time.monotonic() - fps_started
+            if elapsed >= 1.0:
+                with self.lock:
+                    self.capture_fps = frames / elapsed
+                frames = 0
+                fps_started = time.monotonic()
+
+    def _test_camera_capture_loop(self) -> None:
+        cap: Optional[cv2.VideoCapture] = None
+        frames = 0
+        fps_started = time.monotonic()
+
+        while self.running:
+            if cap is None:
+                cap = self._open_test_camera()
+                if cap is None:
+                    self._publish_error_frame()
+                    time.sleep(1)
+                    continue
+
+            ok, frame = cap.read()
+            if not ok:
+                self.camera_error = "test camera read failed"
                 self.capture_ready = False
                 cap.release()
                 cap = None

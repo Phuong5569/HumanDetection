@@ -39,11 +39,17 @@ Raspberry Pi camera `.env` value:
 MODE=RPICAM
 ```
 
+Intel/local test camera `.env` value:
+
+```bash
+MODE=TESTMODE
+```
+
 ## Config
 
 Settings live in `.env`:
 
-- `MODE`: camera mode, `IPCAM` or `RPICAM`, default `IPCAM`.
+- `MODE`: camera mode, `IPCAM`, `RPICAM`, or `TESTMODE`, default `IPCAM`.
 - `RTSP_URL`: full RTSP URL. If unset, app builds one from camera fields below.
 - `CAMERA_IP`: camera IP, default `192.168.2.64`.
 - `CAMERA_USERNAME`: camera username, default `admin`.
@@ -64,6 +70,7 @@ Settings live in `.env`:
 - `CAMERA_WIDTH`: capture width, default `640`.
 - `CAMERA_HEIGHT`: capture height, default `480`.
 - `CAMERA_FPS`: capture FPS target for `rpicam-vid`, default `15`.
+- `TEST_CAMERA_MAX_INDEX`: highest OpenCV camera index to scan in `TESTMODE`, default `4`.
 - `JPEG_QUALITY`: MJPEG quality, default `75`.
 - `ALERT_INTERVAL`: seconds between repeated alerts while occupied, default `1.0`.
 - `HID_ENABLED`: set `0` to disable USB HID notify, default `1`.
@@ -88,6 +95,7 @@ Zone points save to `zone_config.json`.
 - Detection filter layers can be toggled live in the web UI: `MIN_PERSON_HEIGHT_RATIO`, `MIN_PERSON_AREA_RATIO`, `MIN_PERSON_ASPECT`, `MAX_PERSON_ASPECT`, and `KEEP_BEST_PERSON_ONLY`.
 - Collision means any person bounding box intersects the quadrangle.
 - Capture thread always drains RTSP and detector processes latest frame only, reducing buffer delay.
+- `TESTMODE` scans OpenCV camera indexes from `0` through `TEST_CAMERA_MAX_INDEX` and uses the first camera that opens.
 - Alert repeats every `ALERT_INTERVAL` while a detected person overlaps the zone.
 - Alert stops after no detected person overlaps the zone.
 - USB HID writes direct hidraw packets: `ON\n\r\x00\x00\x00` when occupied starts and `OFF\n\r\x00\x00` when occupied clears.
