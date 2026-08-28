@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Human Zone Detector</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>Human Zone Detector</h1>
+          <p id="runtime-status">Starting camera...</p>
+        </div>
+        <div class="stats" aria-label="Detector status">
+          <span><strong id="fps">0.0 / 0.0</strong> FPS detect/cap</span>
+          <span><strong id="count">0</strong> humans raw/filter</span>
+          <span id="zone-state" class="state clear">Clear</span>
+        </div>
+      </header>
+
+      <section class="viewer" aria-label="Live detection view">
+        <img id="video" src="{{ url_for('video') }}" alt="Live camera stream">
+        <canvas id="overlay"></canvas>
+        <div id="alert" class="alert" role="alert">Human in zone</div>
+      </section>
+
+      <footer class="controls">
+        <div class="actions">
+          <button id="save-zone" type="button">Save zone</button>
+          <button id="reset-zone" type="button">Reset zone</button>
+          <button id="test-alert" type="button">Test alert</button>
+        </div>
+        <fieldset class="filter-layers" aria-label="Detection filter layers">
+          <legend>Filter layers</legend>
+          <label><input type="checkbox" data-filter-layer="min_area"> MIN_PERSON_AREA_RATIO</label>
+          <label><input type="checkbox" data-filter-layer="min_height"> MIN_PERSON_HEIGHT_RATIO</label>
+          <label><input type="checkbox" data-filter-layer="min_aspect"> MIN_PERSON_ASPECT</label>
+          <label><input type="checkbox" data-filter-layer="max_aspect"> MAX_PERSON_ASPECT</label>
+          <label><input type="checkbox" data-filter-layer="keep_best"> KEEP_BEST_PERSON_ONLY</label>
+        </fieldset>
+      </footer>
+    </main>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+  </body>
+</html>
