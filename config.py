@@ -49,6 +49,14 @@ def env_bool(key: str, default: str) -> bool:
     return env(key, default).strip().lower() not in {"0", "false", "no", "off", "-1"}
 
 
+def env_choice(key: str, default: str, allowed: tuple[str, ...]) -> str:
+    value = env(key, default).strip().lower()
+    if value not in allowed:
+        choices = ", ".join(allowed)
+        raise ValueError(f"{key} must be one of: {choices}")
+    return value
+
+
 def env_path(key: str, default: str) -> str:
     raw_path = Path(env(key, default))
     if raw_path.is_absolute():
@@ -89,6 +97,8 @@ FILTER_LAYERS = {
 CAMERA_WIDTH = env_int("CAMERA_WIDTH", "640")
 CAMERA_HEIGHT = env_int("CAMERA_HEIGHT", "480")
 CAMERA_FPS = env_int("CAMERA_FPS", "15")
+CAMERA_ANGLE = int(env_choice("CAMERA_ANGLE", "0", ("0", "90", "180", "270")))
+CAMERA_FLIP = env_choice("CAMERA_FLIP", "none", ("none", "h", "v", "hv"))
 TEST_CAMERA_MAX_INDEX = env_int("TEST_CAMERA_MAX_INDEX", "4")
 JPEG_QUALITY = env_int("JPEG_QUALITY", "75")
 ALERT_INTERVAL = env_float("ALERT_INTERVAL", "1.0")

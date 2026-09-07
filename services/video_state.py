@@ -9,6 +9,8 @@ import numpy as np
 
 from config import (
     ALERT_INTERVAL,
+    CAMERA_ANGLE,
+    CAMERA_FLIP,
     CAMERA_FPS,
     CAMERA_HEIGHT,
     CAMERA_WIDTH,
@@ -94,7 +96,25 @@ class VideoState:
             return
         self._ipcam_capture_loop()
 
+    def _orient_frame(self, frame: np.ndarray) -> np.ndarray:
+        if CAMERA_ANGLE == 90:
+            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+        elif CAMERA_ANGLE == 180:
+            frame = cv2.rotate(frame, cv2.ROTATE_180)
+        elif CAMERA_ANGLE == 270:
+            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+
+        if CAMERA_FLIP == "h":
+            frame = cv2.flip(frame, 1)
+        elif CAMERA_FLIP == "v":
+            frame = cv2.flip(frame, 0)
+        elif CAMERA_FLIP == "hv":
+            frame = cv2.flip(frame, -1)
+
+        return frame
+
     def _publish_capture_frame(self, frame: np.ndarray) -> None:
+        frame = self._orient_frame(frame)
         height, width = frame.shape[:2]
         with self.lock:
             self.raw_frame = frame

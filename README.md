@@ -78,6 +78,8 @@ Settings live in `.env`:
 - `CAMERA_WIDTH`: capture width, default `640`.
 - `CAMERA_HEIGHT`: capture height, default `480`.
 - `CAMERA_FPS`: capture FPS target for `rpicam-vid`, default `15`.
+- `CAMERA_ANGLE`: rotate captured frames clockwise before detection and streaming; allowed values are `0`, `90`, `180`, and `270`, default `0`.
+- `CAMERA_FLIP`: flip captured frames after rotation; allowed values are `none`, `h`, `v`, and `hv`, default `none`.
 - `TEST_CAMERA_MAX_INDEX`: highest OpenCV camera index to scan in `TESTMODE`, default `4`.
 - `JPEG_QUALITY`: MJPEG quality, default `75`.
 - `ALERT_INTERVAL`: seconds between repeated alerts while occupied, default `1.0`.
@@ -86,6 +88,13 @@ Settings live in `.env`:
 - `PORT`: Flask port, default `5000`.
 
 Zone points save to `zone_config.json`.
+
+Example camera orientation `.env` values:
+
+```bash
+CAMERA_ANGLE=90
+CAMERA_FLIP=h
+```
 
 ## Project layout
 
