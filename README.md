@@ -66,6 +66,7 @@ Settings live in `.env`:
 - `RPICAM_COMMAND`: Raspberry Pi camera command, default `rpicam-vid`.
 - `RPICAM_EXTRA_ARGS`: extra args appended to `rpicam-vid`.
 - `YOLO_MODEL`: model path, default `models/yolov8n_ncnn_model`.
+- `YOLO_DEVICE`: inference device passed to Ultralytics, for example `cuda` in `TESTMODE`; default empty uses Ultralytics auto device.
 - `INFER_SIZE`: YOLO inference size, default `320`.
 - `CONFIDENCE`: person confidence threshold, default `0.45`.
 - `IOU_THRESHOLD`: YOLO duplicate-box merge threshold, default `0.45`.

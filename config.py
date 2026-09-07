@@ -76,6 +76,7 @@ def layer_enabled(value: float | bool) -> bool:
 
 
 MODEL_PATH = env_model_path("YOLO_MODEL", "models/yolov8n_ncnn_model")
+YOLO_DEVICE = env("YOLO_DEVICE", "").strip()
 INFER_SIZE = env_int("INFER_SIZE", "320")
 CONFIDENCE = env_float("CONFIDENCE", "0.45")
 IOU_THRESHOLD = env_float("IOU_THRESHOLD", "0.45")

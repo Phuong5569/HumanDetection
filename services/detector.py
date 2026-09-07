@@ -14,6 +14,7 @@ from config import (
     MIN_PERSON_HEIGHT_RATIO,
     MODEL_PATH,
     PERSON_CLASS_ID,
+    YOLO_DEVICE,
 )
 from services.geometry import nms_detections
 
@@ -62,6 +63,7 @@ class Detector:
             iou=IOU_THRESHOLD,
             classes=[PERSON_CLASS_ID],
             max_det=MAX_DETECTIONS,
+            device=YOLO_DEVICE or None,
             verbose=False,
         )
 
