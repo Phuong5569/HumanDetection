@@ -45,6 +45,15 @@ Raspberry Pi camera `.env` value:
 MODE=RPICAM
 ```
 
+Dual Raspberry Pi camera `.env` values:
+
+```bash
+MODE=RPICAM
+RPICAM_CAMERA_COUNT=2
+RPICAM_LEFT_EXTRA_ARGS=--camera 0
+RPICAM_RIGHT_EXTRA_ARGS=--camera 1
+```
+
 Intel/local test camera `.env` value:
 
 ```bash
@@ -65,6 +74,9 @@ Settings live in `.env`:
 - `CAMERA_CHANNEL`: camera channel, default `102` for lower-latency substream.
 - `RPICAM_COMMAND`: Raspberry Pi camera command, default `rpicam-vid`.
 - `RPICAM_EXTRA_ARGS`: extra args appended to `rpicam-vid`.
+- `RPICAM_CAMERA_COUNT`: number of Raspberry Pi cameras to open in `RPICAM` mode, `1` or `2`, default `1`.
+- `RPICAM_LEFT_EXTRA_ARGS`: extra args for the left camera when `RPICAM_CAMERA_COUNT=2`, default `--camera 0`.
+- `RPICAM_RIGHT_EXTRA_ARGS`: extra args for the right camera when `RPICAM_CAMERA_COUNT=2`, default `--camera 1`.
 - `YOLO_MODEL`: model path, default `models/yolov8n_ncnn_model`.
 - `YOLO_DEVICE`: inference device passed to Ultralytics, for example `cuda` in `TESTMODE`; default empty uses Ultralytics auto device.
 - `INFER_SIZE`: YOLO inference size, default `320`.
@@ -89,6 +101,8 @@ Settings live in `.env`:
 - `PORT`: Flask port, default `5000`.
 
 Zone points save to `zone_config.json`.
+
+When `RPICAM_CAMERA_COUNT=2`, the app merges left and right camera frames side-by-side into one wider frame. Saved zone points may need reset or redrawing because frame width changes.
 
 Example camera orientation `.env` values:
 

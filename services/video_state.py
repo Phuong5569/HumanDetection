@@ -2,7 +2,7 @@ import shlex
 import subprocess
 import threading
 import time
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 import cv2
 import numpy as np
@@ -21,8 +21,11 @@ from config import (
     MIN_PERSON_ASPECT,
     MIN_PERSON_HEIGHT_RATIO,
     MODE,
+    RPICAM_CAMERA_COUNT,
     RPICAM_COMMAND,
     RPICAM_EXTRA_ARGS,
+    RPICAM_LEFT_EXTRA_ARGS,
+    RPICAM_RIGHT_EXTRA_ARGS,
     RTSP_URL,
     TEST_CAMERA_MAX_INDEX,
 )
@@ -193,7 +196,7 @@ class VideoState:
                 frames = 0
                 fps_started = time.monotonic()
 
-    def _rpicam_args(self) -> List[str]:
+    def _rpicam_args(self, camera_extra_args: str = "") -> List[str]:
         args = [
             RPICAM_COMMAND,
             "--codec",
@@ -212,30 +215,33 @@ class VideoState:
         ]
         if RPICAM_EXTRA_ARGS:
             args.extend(shlex.split(RPICAM_EXTRA_ARGS))
+        if camera_extra_args:
+            args.extend(shlex.split(camera_extra_args))
         return args
 
-    def _rpicam_capture_loop(self) -> None:
-        frames = 0
-        fps_started = time.monotonic()
+    def _read_rpicam_frames(
+        self,
+        camera_extra_args: str,
+        label: str,
+        on_frame: Callable[[np.ndarray], None],
+        on_error: Callable[[Optional[str]], None],
+    ) -> None:
         buffer = bytearray()
 
         while self.running:
             try:
                 process = subprocess.Popen(
-                    self._rpicam_args(),
+                    self._rpicam_args(camera_extra_args),
                     stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL,
                     bufsize=0,
                 )
             except Exception as exc:
-                self.camera_error = f"rpicam-vid failed: {exc}"
-                self.capture_ready = False
-                self._publish_error_frame()
+                on_error(f"{label} rpicam-vid failed: {exc}")
                 time.sleep(1)
                 continue
 
-            self.camera_error = None
-            self.capture_ready = True
+            on_error(None)
 
             try:
                 while self.running and process.stdout:
@@ -258,14 +264,7 @@ class VideoState:
                         if frame is None:
                             continue
 
-                        self._publish_capture_frame(frame)
-                        frames += 1
-                        elapsed = time.monotonic() - fps_started
-                        if elapsed >= 1.0:
-                            with self.lock:
-                                self.capture_fps = frames / elapsed
-                            frames = 0
-                            fps_started = time.monotonic()
+                        on_frame(frame)
             finally:
                 process.terminate()
                 try:
@@ -273,10 +272,135 @@ class VideoState:
                 except subprocess.TimeoutExpired:
                     process.kill()
 
-            self.camera_error = "rpicam-vid stopped"
-            self.capture_ready = False
-            self._publish_error_frame()
+            on_error(f"{label} rpicam-vid stopped")
             time.sleep(0.5)
+
+    def _rpicam_capture_loop(self) -> None:
+        if RPICAM_CAMERA_COUNT == 2:
+            self._dual_rpicam_capture_loop()
+            return
+
+        frames = 0
+        fps_started = time.monotonic()
+
+        def on_frame(frame: np.ndarray) -> None:
+            nonlocal frames, fps_started
+            self._publish_capture_frame(frame)
+            frames += 1
+            elapsed = time.monotonic() - fps_started
+            if elapsed >= 1.0:
+                with self.lock:
+                    self.capture_fps = frames / elapsed
+                frames = 0
+                fps_started = time.monotonic()
+
+        def on_error(error: Optional[str]) -> None:
+            self.camera_error = error
+            self.capture_ready = error is None
+            if error:
+                self._publish_error_frame()
+
+        self._read_rpicam_frames("", "rpicam", on_frame, on_error)
+
+    def _placeholder_frame(self, width: int, height: int, message: str) -> np.ndarray:
+        frame = np.zeros((height, width, 3), dtype=np.uint8)
+        cv2.putText(frame, message, (24, height // 2), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (230, 230, 230), 2)
+        return frame
+
+    def _merge_rpicam_frames(
+        self,
+        left: Optional[np.ndarray],
+        right: Optional[np.ndarray],
+        left_error: Optional[str],
+        right_error: Optional[str],
+    ) -> np.ndarray:
+        height = CAMERA_HEIGHT
+        width = CAMERA_WIDTH
+        if left is not None:
+            height, width = left.shape[:2]
+        elif right is not None:
+            height, width = right.shape[:2]
+
+        if left is None:
+            left = self._placeholder_frame(width, height, left_error or "left camera waiting")
+        if right is None:
+            right = self._placeholder_frame(width, height, right_error or "right camera waiting")
+        elif right.shape[0] != height:
+            scale = height / right.shape[0]
+            right_width = max(1, round(right.shape[1] * scale))
+            right = cv2.resize(right, (right_width, height))
+
+        return np.hstack((left, right))
+
+    def _dual_rpicam_capture_loop(self) -> None:
+        latest_frames: Dict[str, Optional[np.ndarray]] = {"left": None, "right": None}
+        latest_errors: Dict[str, Optional[str]] = {"left": "left camera waiting", "right": "right camera waiting"}
+        latest_ids = {"left": 0, "right": 0}
+        latest_lock = threading.Lock()
+        frames = 0
+        fps_started = time.monotonic()
+        last_published_ids = (-1, -1)
+
+        def make_on_frame(side: str) -> Callable[[np.ndarray], None]:
+            def on_frame(frame: np.ndarray) -> None:
+                with latest_lock:
+                    latest_frames[side] = frame
+                    latest_errors[side] = None
+                    latest_ids[side] += 1
+
+            return on_frame
+
+        def make_on_error(side: str) -> Callable[[Optional[str]], None]:
+            def on_error(error: Optional[str]) -> None:
+                with latest_lock:
+                    latest_errors[side] = error
+                    latest_ids[side] += 1
+
+            return on_error
+
+        workers = [
+            threading.Thread(
+                target=self._read_rpicam_frames,
+                args=(RPICAM_LEFT_EXTRA_ARGS, "left", make_on_frame("left"), make_on_error("left")),
+                daemon=True,
+            ),
+            threading.Thread(
+                target=self._read_rpicam_frames,
+                args=(RPICAM_RIGHT_EXTRA_ARGS, "right", make_on_frame("right"), make_on_error("right")),
+                daemon=True,
+            ),
+        ]
+        for worker in workers:
+            worker.start()
+
+        while self.running:
+            with latest_lock:
+                left = None if latest_frames["left"] is None else latest_frames["left"].copy()
+                right = None if latest_frames["right"] is None else latest_frames["right"].copy()
+                left_error = latest_errors["left"]
+                right_error = latest_errors["right"]
+                frame_ids = (latest_ids["left"], latest_ids["right"])
+
+            if frame_ids == last_published_ids and left is None and right is None:
+                time.sleep(0.05)
+                continue
+
+            merged = self._merge_rpicam_frames(left, right, left_error, right_error)
+            errors = [error for error in (left_error, right_error) if error]
+            self.camera_error = "; ".join(errors) if errors else None
+            self.capture_ready = not errors
+            self._publish_capture_frame(merged)
+            last_published_ids = frame_ids
+
+            frames += 1
+            elapsed = time.monotonic() - fps_started
+            if elapsed >= 1.0:
+                with self.lock:
+                    self.capture_fps = frames / elapsed
+                frames = 0
+                fps_started = time.monotonic()
+
+            time.sleep(0.01)
 
     def _process_loop(self) -> None:
         frames = 0
