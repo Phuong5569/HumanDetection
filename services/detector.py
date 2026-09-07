@@ -36,7 +36,9 @@ class Detector:
         if YOLO is None:
             self.error = "ultralytics package not installed"
             return
-        if not Path(MODEL_PATH).exists():
+        model_path = Path(MODEL_PATH)
+        is_bare_model_name = model_path.name == MODEL_PATH
+        if not is_bare_model_name and not model_path.exists():
             self.error = f"model not found: {MODEL_PATH}"
             return
         try:

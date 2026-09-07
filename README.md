@@ -13,10 +13,16 @@ pip install -r requirements.txt
 Export YOLOv8n to NCNN on a machine with enough RAM, then copy the output folder to `models/yolov8n_ncnn_model`:
 
 ```bash
-yolo export model=yolov8n.pt format=ncnn imgsz=320
+yolo export model=yolov8n.pt format=ncnn imgsz=640
 ```
 
+For normal x64/Intel testing, use `YOLO_MODEL=yolov8n.pt`. Use `models/yolov8n_ncnn_model` on Raspberry Pi.
+
 ## Run
+
+
+C:\Users\hoang\Documents\PowerShell\Microsoft.PowerShell_profile.ps1
+C:\Users\hoang\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1
 
 ```bash
 python app.py
@@ -43,6 +49,8 @@ Intel/local test camera `.env` value:
 
 ```bash
 MODE=TESTMODE
+YOLO_MODEL=yolov8n.pt
+HID_ENABLED=0
 ```
 
 ## Config

@@ -56,11 +56,18 @@ def env_path(key: str, default: str) -> str:
     return str(BASE_DIR / raw_path)
 
 
+def env_model_path(key: str, default: str) -> str:
+    raw_value = env(key, default)
+    if "/" not in raw_value and "\\" not in raw_value:
+        return raw_value
+    return env_path(key, default)
+
+
 def layer_enabled(value: float | bool) -> bool:
     return value != -1 and value is not False
 
 
-MODEL_PATH = env_path("YOLO_MODEL", "models/yolov8n_ncnn_model")
+MODEL_PATH = env_model_path("YOLO_MODEL", "models/yolov8n_ncnn_model")
 INFER_SIZE = env_int("INFER_SIZE", "320")
 CONFIDENCE = env_float("CONFIDENCE", "0.45")
 IOU_THRESHOLD = env_float("IOU_THRESHOLD", "0.45")
