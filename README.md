@@ -102,7 +102,7 @@ Settings live in `.env`:
 
 Zone points save to `zone_config.json`.
 
-When `RPICAM_CAMERA_COUNT=2`, the app merges left and right camera frames side-by-side into one wider frame. Saved zone points may need reset or redrawing because frame width changes.
+When `RPICAM_CAMERA_COUNT=2`, the app detects each camera frame separately, offsets right-camera boxes into merged coordinates, and displays left and right frames side-by-side as one wider stream. Saved zone points may need reset or redrawing because frame width changes.
 
 Example camera orientation `.env` values:
 

@@ -45,6 +45,7 @@ class VideoState:
         self.camera_error: Optional[str] = None
         self.capture_ready = False
         self.raw_frame: Optional[np.ndarray] = None
+        self.raw_dual_frames: Optional[Dict[str, object]] = None
         self.raw_frame_id = 0
         self.frame: Optional[np.ndarray] = None
         self.encoded_frame: Optional[bytes] = None
@@ -121,6 +122,36 @@ class VideoState:
         height, width = frame.shape[:2]
         with self.lock:
             self.raw_frame = frame
+            self.raw_dual_frames = None
+            self.raw_frame_id += 1
+            self.frame_size = {"width": width, "height": height}
+            if not self.detector.ready:
+                self.frame = frame
+                self.detections = []
+
+        if not self.detector.ready:
+            self._encode_frame(frame)
+
+    def _publish_dual_capture_frame(
+        self,
+        frame: np.ndarray,
+        left: Optional[np.ndarray],
+        right: Optional[np.ndarray],
+        left_width: int,
+        pre_orient_width: int,
+        pre_orient_height: int,
+    ) -> None:
+        frame = self._orient_frame(frame)
+        height, width = frame.shape[:2]
+        with self.lock:
+            self.raw_frame = frame
+            self.raw_dual_frames = {
+                "left": None if left is None else left.copy(),
+                "right": None if right is None else right.copy(),
+                "left_width": left_width,
+                "pre_orient_width": pre_orient_width,
+                "pre_orient_height": pre_orient_height,
+            }
             self.raw_frame_id += 1
             self.frame_size = {"width": width, "height": height}
             if not self.detector.ready:
@@ -307,13 +338,13 @@ class VideoState:
         cv2.putText(frame, message, (24, height // 2), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (230, 230, 230), 2)
         return frame
 
-    def _merge_rpicam_frames(
+    def _prepare_rpicam_frames(
         self,
         left: Optional[np.ndarray],
         right: Optional[np.ndarray],
         left_error: Optional[str],
         right_error: Optional[str],
-    ) -> np.ndarray:
+    ) -> tuple[np.ndarray, np.ndarray, Optional[np.ndarray], Optional[np.ndarray]]:
         height = CAMERA_HEIGHT
         width = CAMERA_WIDTH
         if left is not None:
@@ -321,6 +352,8 @@ class VideoState:
         elif right is not None:
             height, width = right.shape[:2]
 
+        detect_left = left
+        detect_right = right
         if left is None:
             left = self._placeholder_frame(width, height, left_error or "left camera waiting")
         if right is None:
@@ -329,8 +362,19 @@ class VideoState:
             scale = height / right.shape[0]
             right_width = max(1, round(right.shape[1] * scale))
             right = cv2.resize(right, (right_width, height))
+            detect_right = right
 
-        return np.hstack((left, right))
+        return left, right, detect_left, detect_right
+
+    def _merge_rpicam_frames(
+        self,
+        left: Optional[np.ndarray],
+        right: Optional[np.ndarray],
+        left_error: Optional[str],
+        right_error: Optional[str],
+    ) -> np.ndarray:
+        left_frame, right_frame, _, _ = self._prepare_rpicam_frames(left, right, left_error, right_error)
+        return np.hstack((left_frame, right_frame))
 
     def _dual_rpicam_capture_loop(self) -> None:
         latest_frames: Dict[str, Optional[np.ndarray]] = {"left": None, "right": None}
@@ -385,11 +429,21 @@ class VideoState:
                 time.sleep(0.05)
                 continue
 
-            merged = self._merge_rpicam_frames(left, right, left_error, right_error)
+            left_frame, right_frame, detect_left, detect_right = self._prepare_rpicam_frames(
+                left, right, left_error, right_error
+            )
+            merged = np.hstack((left_frame, right_frame))
             errors = [error for error in (left_error, right_error) if error]
             self.camera_error = "; ".join(errors) if errors else None
             self.capture_ready = not errors
-            self._publish_capture_frame(merged)
+            self._publish_dual_capture_frame(
+                merged,
+                detect_left,
+                detect_right,
+                left_frame.shape[1],
+                merged.shape[1],
+                merged.shape[0],
+            )
             last_published_ids = frame_ids
 
             frames += 1
@@ -411,6 +465,7 @@ class VideoState:
             with self.lock:
                 frame_id = self.raw_frame_id
                 frame = None if self.raw_frame is None else self.raw_frame.copy()
+                dual_frames = self.raw_dual_frames
 
             if frame is None or frame_id == last_processed_id:
                 time.sleep(0.01)
@@ -421,7 +476,10 @@ class VideoState:
                 zone = list(self.zone)
                 filter_layers = dict(self.filter_layers)
 
-            detections = self.detector.detect(frame, filter_layers)
+            if dual_frames is None:
+                detections = self.detector.detect(frame, filter_layers)
+            else:
+                detections = self._detect_dual_frames(dual_frames, filter_layers)
             collision = any(bbox_intersects_polygon(det["bbox"], zone) for det in detections)
             now = time.monotonic()
 
@@ -443,6 +501,75 @@ class VideoState:
                     self.fps = frames / elapsed
                 frames = 0
                 fps_started = time.monotonic()
+
+    def _detect_dual_frames(self, dual_frames: Dict[str, object], filter_layers: Dict[str, bool]) -> List[Dict[str, List[float]]]:
+        detections: List[Dict[str, List[float]]] = []
+        raw_count = 0
+        filtered_count = 0
+        left = dual_frames["left"]
+        right = dual_frames["right"]
+        left_width = int(dual_frames["left_width"])
+        pre_orient_width = int(dual_frames["pre_orient_width"])
+        pre_orient_height = int(dual_frames["pre_orient_height"])
+
+        if left is not None:
+            left_detections = self.detector.detect(left, filter_layers)
+            raw_count += self.detector.raw_detection_count
+            filtered_count += self.detector.filtered_detection_count
+            detections.extend(left_detections)
+
+        if right is not None:
+            right_detections = self.detector.detect(right, filter_layers)
+            raw_count += self.detector.raw_detection_count
+            filtered_count += self.detector.filtered_detection_count
+            for detection in right_detections:
+                x1, y1, x2, y2 = detection["bbox"]
+                detections.append(
+                    {
+                        "bbox": [x1 + left_width, y1, x2 + left_width, y2],
+                        "confidence": detection["confidence"],
+                    }
+                )
+
+        self.detector.raw_detection_count = raw_count
+        self.detector.filtered_detection_count = filtered_count
+        return [
+            {
+                "bbox": self._orient_bbox(det["bbox"], pre_orient_width, pre_orient_height),
+                "confidence": det["confidence"],
+            }
+            for det in detections
+        ]
+
+    def _orient_bbox(self, bbox: List[float], width: int, height: int) -> List[float]:
+        x1, y1, x2, y2 = bbox
+        points = [
+            self._orient_point(x1, y1, width, height),
+            self._orient_point(x2, y1, width, height),
+            self._orient_point(x2, y2, width, height),
+            self._orient_point(x1, y2, width, height),
+        ]
+        xs = [point[0] for point in points]
+        ys = [point[1] for point in points]
+        return [min(xs), min(ys), max(xs), max(ys)]
+
+    def _orient_point(self, x: float, y: float, width: int, height: int) -> tuple[float, float]:
+        oriented_width = width
+        oriented_height = height
+        if CAMERA_ANGLE == 90:
+            x, y = height - y, x
+            oriented_width, oriented_height = height, width
+        elif CAMERA_ANGLE == 180:
+            x, y = width - x, height - y
+        elif CAMERA_ANGLE == 270:
+            x, y = y, width - x
+            oriented_width, oriented_height = height, width
+
+        if CAMERA_FLIP in {"h", "hv"}:
+            x = oriented_width - x
+        if CAMERA_FLIP in {"v", "hv"}:
+            y = oriented_height - y
+        return x, y
 
     def _encode_frame(self, frame: np.ndarray) -> None:
         ok, buffer = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY])
